@@ -1,36 +1,47 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Complex Form with Client-Side Validation
 
-## Getting Started
+Next.js (TypeScript), Tailwind and React hooks only. 
 
-First, run the development server:
+## Structure
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
+| File | Purpose |
+|---|---|
+| `lib/validators.ts` | Pure rule functions and the per-field `rules` config (data, not components) |
+| `lib/api.ts` | `setTimeout`-simulated `checkUsername`, `submitForm` and `withRetry` |
+| `hooks/useForm.ts` | Values, touched, errors, timing and cross-field revalidation |
+| `hooks/useUsernameCheck.ts` | Debounced async username check |
+| `components/Field.tsx` | Accessible input with inline error and status line |
+| `components/ErrorSummary.tsx` | Error list with links to the invalid fields |
+| `components/SignupForm.tsx` | Wires everything together and handles submit |
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## How validation works
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+- **Layered:** sync rules run first. The async username check only runs once they pass.
+- **Timing:** a field validates on its first blur. After that it revalidates on every change, so errors clear as soon as they are fixed. Submit validates everything.
+- **Cross-field:** changing `password` revalidates `confirmPassword` (declared in `dependents`), so "Passwords do not match" is never stale.
+- **Async check:** debounced 500ms, cancelled on unmount, and stale responses are ignored.
+- **Custom rules per field:** each field is an array in `rules`. Adding a rule is one line, for example `maxLength(30)`.
+- **Trimming:** `required`, `isEmail` and `pattern` trim input. Passwords are never trimmed.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Submit behaviour
 
-## Learn More
+- **Disabled button:** the button looks disabled and has `aria-disabled`, but stays clickable, so clicking it explains what is wrong. It is truly `disabled` only while submitting or while the username is being checked.
+- **Failed submit:** every error is shown, a summary with links appears, and focus moves to the first invalid field.
+- **Server error** (duplicate email): shown inline on the email field.
+- **Network failure:** `withRetry` retries twice with backoff (500ms, then 1000ms). If it still fails, a general alert explains and the user can submit again.
 
-To learn more about Next.js, take a look at the following resources:
+## Accessibility
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+- `aria-invalid`, `aria-describedby` and `role="alert"` on every error.
+- A `role="status"` line that stays mounted, so "Checking…" and "Available" are announced politely.
+- Errors use icon, text and border colour, never colour alone.
+- `noValidate` on the form, so the browser does not run its own validation first.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Try it
 
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+| Input | Result |
+|---|---|
+| Username `admin`, `root` or `john` | "Already taken" |
+| Email `taken@example.com` | Server error on the email field |
+| Username `offline` | Network failure on every attempt, so retries run out |
+| Anything else | About 30% of submits fail randomly, and retry usually recovers |
